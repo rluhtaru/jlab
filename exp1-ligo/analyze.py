@@ -11,7 +11,9 @@ import matplotlib.mlab as mlab
 import h5py
 import lmfit
 from lmfit import Model, minimize, fit_report, Parameters
+from scipy.linalg.decomp_svd import null_space
 from scipy.optimize import curve_fit
+from scipy import stats
 
 import os
 
@@ -19,17 +21,34 @@ import os
 # Set parameters
 # ----------------------------------------------------------------
 data = {
-    "tutorial150914": {"file": 'data/H-H1_GWOSC_4KHZ_R1-1126257415-4096.hdf5', "time": 1126259462.422},
-    "GW170104": {"file": "data/H-H1_GWOSC_4KHZ_R1-1167557889-4096.hdf5", "time": 1167559936.6},
+    "tutorial150914H1": {"file": 'data/H-H1_GWOSC_4KHZ_R1-1126257415-4096.hdf5', "time": 1126259462.422},
+    "tutorial150914L1": {"file": 'data/L-L1_GWOSC_4KHZ_R1-1126259447-32.hdf5', "time": 1126259462.422},
+    "GW170104H1": {"file": "data/H-H1_GWOSC_4KHZ_R1-1167559921-32.hdf5", "time": 1167559936.6},
     "GW170608": {"file": "data/H-H1_GWOSC_4KHZ_R1-1180920447-4096.hdf5", "time": 1180922494.5},
-    "GW170608-32s": {"file": "data/H-H1_GWOSC_4KHZ_R1-1180922479-32.hdf5", "time": 1180922494.5},
-    "GW170818": {"file": "data/L-L1_GWOSC_4KHZ_R1-1187056280-4096.hdf5", "time": 1187058327.1},
+    "GW170608-32sH1": {"file": "data/H-H1_GWOSC_4KHZ_R1-1180922479-32.hdf5", "time": 1180922494.5},
+    "GW170814L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1186741846-32.hdf5", "time": 1186741861.5},
+    "GW170818L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1187058312-32.hdf5", "time": 1187058327.1},
+    "GW170823L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1187529241-32.hdf5", "time": 1187529256.5},
+    "GW190412L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1239082247-32.hdf5", "time": 1239082262.2},
+    "GW190421H1": {"file": "data/H-H1_GWOSC_4KHZ_R1-1239917939-32.hdf5", "time": 1239917954.3},
+    "GW190424L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1240164411-32.hdf5", "time": 1240164426.1},
+    "GW190519L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1242315347-32.hdf5", "time": 1242315362.4},
+    "GW190521L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1242442952-32.hdf5", "time": 1242442967.4},
+    "GW190521_0743L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1242459842-32.hdf5", "time": 1242459857.5},
+    "GW190602L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1243533570-32.hdf5", "time": 1243533585.1},
+    "GW190620L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1245035064-32.hdf5", "time": 1245035079.3},
+    "GW190630L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1245955928-32.hdf5", "time": 1245955943.2},
+    "GW190708L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1246663500-32.hdf5", "time": 1246663515.4},
+    "GW190814L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1249852241-32.hdf5", "time": 1249852257.0},
+    "GW190828L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1251009248-32.hdf5", "time": 1251009263.8},
+    "GW190828H1": {"file": "data/H-H1_GWOSC_4KHZ_R1-1251009248-32.hdf5", "time": 1251009263.8},
+    "GW190910H1": {"file": "data/H-H1_GWOSC_4KHZ_R1-1251009248-32.hdf5", "time": 1251009263.8},
+    "GW190910L1": {"file": "data/L-L1_GWOSC_4KHZ_R1-1252150090-32.hdf5", "time": 1252150105.3},
 }
-evtname = "tutorial150914"
+detector = 'H1'
+evtname = "GW190828" + detector
 fn = data[evtname]["file"]
 tevent = data[evtname]["time"]
-
-detector = 'H1'  # detecotr: L1 or H1
 
 # ----------------------------------------------------------------
 # Load LIGO data
@@ -83,7 +102,7 @@ ax = bandpassfig.gca()
 ax.set_ylabel('strain (whitened + band-pass)')
 ax.vlines(max_signal_time, *ax.get_ylim(), colors="red", lw=1)
 ax.vlines(tevent, *ax.get_ylim(), colors="blue", lw=1)
-# bandpassfig.show()
+bandpassfig.show()
 
 # Zoom in the interesting region
 
@@ -93,14 +112,14 @@ ax.set_ylabel('strain (whitened + band-pass), zoomed in')
 ax.set_xlim(tevent-0.17, tevent+0.13)
 ax.set_ylim(-2, 2)
 ax.vlines(tevent, *ax.get_ylim(), colors="red", lw=1)
-# zoomfig.show()
+zoomfig.show()
 
 # ----------------------------------------------------------------
 # q-transform
 # ----------------------------------------------------------------
 
 dt = 1  # -- Set width of q-transform plot, in seconds
-hq = white_data.q_transform(outseg=(tevent-dt, tevent+dt))
+hq = white_data_bp.q_transform(outseg=(tevent-dt, tevent+dt))
 hq.shift(-hq.xindex[0])
 print(hq.t0)
 print(hq.times)
@@ -113,63 +132,160 @@ hqfig = hq.plot()
 ax = hqfig.gca()
 hqfig.colorbar(label="Normalised energy")
 ax.grid(False)
-ax.set_yscale("log")
-ax.set_xlim(0.5, 1.5)
+# ax.set_yscale("log")
+ax.set_xlim(dt - 0.5, dt + 0.5)
 # ax.set_xlim(tevent-0.5, tevent+0.5)
-ax.set_ylim(20, 300)
+ax.set_ylim(20, 400)
 ax.set_ylabel('Frequency (Hz)')
 # hqfig.show()
 
-# Q-TRANSFORM FIT
+# ----------------------------------------------------------------
+# Q-transform fit
+# ----------------------------------------------------------------
 
 energy_values = hq.value  # 2d array, x-axis is time, y-axis is freq, value is energy
 max_freq_indices = np.argmax(energy_values, axis=1)
-print(max_freq_indices)
+max_time_indices = np.argmax(energy_values, axis=0)
+
 max_freqs = [hq.yindex[i].value for i in max_freq_indices]
+max_times = [hq.xindex[i].value for i in max_time_indices]
 times_in_seconds = [t.value for t in hq.xindex]
+freqs_in_hertz = [f.value for f in hq.yindex]
 # ax.scatter(times_in_seconds, max_freqs, c='red', marker='x')
 # hqfig.show()
 
 # Find global maximum energy, base_index is the x index of it
 # We use unravel_index to reshape index because argmax flattens the array if no
 # axis is given
-base_index = np.unravel_index(np.argmax(energy_values), energy_values.shape)[0]
-# ax.scatter(times_in_seconds[base_index], max_freqs[base_index], s=30, c='black', marker='s', zorder=10)
+base_index = np.unravel_index(np.argmax(energy_values), energy_values.shape)
+base_time_index = base_index[0]
+base_freq_index = base_index[1]
+# ax.scatter(times_in_seconds[base_time_index], max_freqs[base_time_index], s=30, c='black', marker='s', zorder=10)
+
+# # EQUAL TIME SEPARATION:
+
+# # End iterating if maximum frequency differs more than CUTOFF_RATIO times, used
+# # to determine where the interesting line starts and ends
+# CUTOFF_RATIO = 1.2
+
+# # x and y values of the data points on the interesting line
+# line_times = [times_in_seconds[base_time_index]]
+# line_freqs = [max_freqs[base_time_index]]
+
+# # Check times after base time
+# for i in range(base_time_index + 1, len(times_in_seconds)):
+#     new_time = times_in_seconds[i]
+#     new_freq = max_freqs[i]
+#     ratio = new_freq / line_freqs[-1]
+#     if (ratio > CUTOFF_RATIO or 1/ratio > CUTOFF_RATIO):
+#         break
+
+#     line_times.append(new_time)
+#     line_freqs.append(new_freq)
+
+# # Check times before base time
+# for i in range(base_time_index - 1, 0, -1):
+#     new_time = times_in_seconds[i]
+#     new_freq = max_freqs[i]
+#     ratio = new_freq / line_freqs[0]
+#     if (ratio > CUTOFF_RATIO or 1/ratio > CUTOFF_RATIO):
+#         break
+
+#     line_times.insert(0, new_time)
+#     line_freqs.insert(0, new_freq)
+
+# EQUAL FREQUENCY SEPARATION:
+
+
+def find_FWHM(max_time_index, freq_index):
+    '''
+    Find full width at half maximum in time-direction for a given time and freq
+    index. The time index is assumed to be the index where the energy is maximal
+    for this frequency.
+
+    Returns (center time in seconds, FWMH in seconds)
+    '''
+    max_value = energy_values[max_time_index, freq_index]
+    min_time = times_in_seconds[max_time_index]
+    max_time = times_in_seconds[max_time_index]
+
+    # Check larger times
+    for i in range(max_time_index + 1, energy_values.shape[0]):
+        value = energy_values[i, freq_index]
+        if (value < max_value / 2):
+            # Take the average of two times
+            max_time = (max_time + times_in_seconds[i]) / 2
+            break
+        max_time = times_in_seconds[i]
+
+    # Check smaller times
+    for i in range(max_time_index - 1, 0, -1):
+        value = energy_values[i, freq_index]
+        if (value < max_value / 2):
+            min_time = (min_time + times_in_seconds[i]) / 2
+            break
+        min_time = times_in_seconds[i]
+
+    avg = (min_time + max_time) / 2
+    return (avg, max_time - min_time)
+
+
+def find_center(max_time_index, freq_index):
+    return find_FWHM(max_time_index, freq_index)[0]
+
+
+def find_time_uncertainty(max_time_index, freq_index, min_uncertainty=0):
+    # FWHM is 2.355 sigmas
+    uncertainty = find_FWHM(max_time_index, freq_index)[1] / 2.355
+    return max(uncertainty, min_uncertainty)
+
 
 # x and y values of the data points on the interesting line
-line_times = [times_in_seconds[base_index]]
-line_freqs = [max_freqs[base_index]]
+line_times = [find_center(max_time_indices[base_freq_index], base_freq_index)]
+line_time_uncertainties = [find_time_uncertainty(
+    max_time_indices[base_freq_index], base_freq_index)]
+line_freqs = [freqs_in_hertz[base_freq_index]]
 
-# End iterating if maximum frequency differs more than CUTOFF_RATIO times, used
-# to determine where the interesting line starts and ends
-CUTOFF_RATIO = 1.2
+# End iterating in each frequency direction if time of max value differs by more
+# than TIME_CUTOFF
+TIME_CUTOFF = 0.02
 
 # Check times after base time
-for i in range(base_index + 1, len(times_in_seconds)):
-    new_time = times_in_seconds[i]
-    new_freq = max_freqs[i]
-    ratio = new_freq / line_freqs[-1]
-    if (ratio > CUTOFF_RATIO or 1/ratio > CUTOFF_RATIO):
+for i in range(base_freq_index + 1, len(freqs_in_hertz)):
+    new_time = max_times[i]
+    new_freq = freqs_in_hertz[i]
+    diff = new_time - line_times[-1]
+    if (abs(diff) > TIME_CUTOFF):
         break
 
-    line_times.append(new_time)
+    line_times.append(find_center(max_time_indices[i], i))
+    line_time_uncertainties.append(
+        find_time_uncertainty(max_time_indices[i], i))
     line_freqs.append(new_freq)
 
 # Check times before base time
-for i in range(base_index - 1, 0, -1):
-    new_time = times_in_seconds[i]
-    new_freq = max_freqs[i]
-    ratio = new_freq / line_freqs[0]
-    if (ratio > CUTOFF_RATIO or 1/ratio > CUTOFF_RATIO):
+for i in range(base_freq_index - 1, 0, -1):
+    new_time = max_times[i]
+    new_freq = freqs_in_hertz[i]
+    diff = new_time - line_times[0]
+    if (abs(diff) > TIME_CUTOFF):
         break
 
-    line_times.insert(0, new_time)
+    line_times.insert(0, find_center(max_time_indices[i], i))
+    line_time_uncertainties.insert(
+        0, find_time_uncertainty(max_time_indices[i], i))
     line_freqs.insert(0, new_freq)
 
+print(line_times)
+print(line_time_uncertainties)
+print(line_freqs)
 # Plot only the interesting line
-line_times = line_times[math.floor(len(line_times)/2):]
-line_freqs = line_freqs[math.floor(len(line_freqs)/2):]
-ax.scatter(line_times, line_freqs, c='xkcd:blue', marker='x')
+# line_times = line_times[math.floor(len(line_times)/2):]
+# line_freqs = line_freqs[math.floor(len(line_freqs)/2):]
+# ax.scatter(line_times, line_freqs, c='xkcd:blue', marker='x')
+PLOT_EVERY = 10
+ax.errorbar(line_times[::PLOT_EVERY], line_freqs[::PLOT_EVERY],
+            xerr=line_time_uncertainties[::PLOT_EVERY], c='xkcd:blue', marker='x', fmt="none")
 # hqfig.show()
 
 # Frequency model
@@ -202,11 +318,24 @@ def loggwfreq(t, t0, M): return np.log(gwfreq(t, t0, M))
 # Fit log(freq)
 # popt, pcov = curve_fit(loggwfreq, line_times, np.log(line_freqs), p0=[
 #                        line_times[-1] + 0.1, 20], bounds=([line_times[-1], 1], [line_times[-1] + 0.3, 100]), verbose=1, xtol=None, maxfev=1e4, method='dogbox')
+
+# Fit inverse
 popt, pcov = curve_fit(inv_gwfreq, line_freqs, line_times, p0=[
-                       line_times[-1], 20], bounds=([line_times[-1], 1], [line_times[-1] + 0.3, 100]), verbose=1, xtol=None, maxfev=1e4, method='dogbox')
+                       line_times[-1], 20], sigma=line_time_uncertainties, absolute_sigma=True, bounds=([line_times[-1] - 0.3, 1], [line_times[-1] + 0.3, 100]), verbose=1, xtol=None, maxfev=1e4, method='dogbox')
 
 print("Optimal parameters", popt)
-# print("Optimal parameter errors", np.diag(pcov))
+print("Optimal parameter errors", np.sqrt(np.diag(pcov)))
+chisq = np.sum(((inv_gwfreq(line_freqs, *popt) - line_times) /
+               line_time_uncertainties)**2)
+ddof = 2
+reduced_chisq = chisq / (len(line_freqs) - ddof)
+chiprob = 1 - stats.chi2.cdf(chisq, len(line_freqs) - ddof)
+print("Chi^2", chisq)
+print("Reduced chi^2", reduced_chisq)
+print("Probability of chi^2", chiprob)
+print("1 - Probability of chi^2", stats.chi2.cdf(chisq, len(line_freqs) - ddof))
+
+
 ax.plot(times_in_seconds, gwfreq(times_in_seconds, *popt), c='red', zorder=10)
 hqfig.show()
 sys.exit()
